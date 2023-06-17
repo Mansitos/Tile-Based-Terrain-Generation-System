@@ -32,31 +32,60 @@ public struct ForestSettings
 [CustomEditor(typeof(TerrainGenerator))]
 public class TerrainGeneratorEditor : Editor
 {
+
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();
 
         TerrainGenerator generator = (TerrainGenerator)target;
 
-        if (GUILayout.Button("Generate Terrain"))
+        if (GUILayout.Button("Generate Terrain Data"))
         {
             // Generate new terrain
-            generator.GenerateTerrain();
+            Debug.Log("Generate Terrain Data");
+            generator.GenerateTerrainData();
         }
+
+        if (GUILayout.Button("Generate Terrain Mesh"))
+        {
+            // Generate new terrain
+            Debug.Log("Generate Terrain Mesh");
+            generator.GenerateTerrainMesh(generator.terrainMesh);
+        }
+
+        if (generator.elevationTextureMap!=null) { 
+            EditorGUI.BeginDisabledGroup(true);
+            EditorGUILayout.LabelField("Perlin Noise Map");
+            Texture2D texture = generator.elevationTextureMap;
+            Rect rect = GUILayoutUtility.GetAspectRect((float)texture.width / texture.height);
+            EditorGUI.DrawPreviewTexture(rect, texture);
+            EditorGUI.EndDisabledGroup();
+        }
+
     }
 }
+
 
 public class TerrainGenerator : MonoBehaviour
 {
     public int width;
     public int height;
     public float scale;
+    public int detailsLevel; // TODO: Add range >0
     public Tilemap terrainTypeTilemap;
+    public float flatTerrainMin;
+    public float flatTerrainMax;
+    public float flatTerrainThreshold;
     public List<TileWithThreshold> tilesWithThresholds;
     public int seed;
     public ForestSettings forestSettings;
+    public GameObject terrainMesh;
+    public int terrainHeight;
+    public Material terrainMaterial;
 
-    // Helper function to remove all tiles from the tilemap
+    public Texture2D elevationTextureMap;
+
+     // Helper function to remove all tiles from the tilemap
     private void ClearTerrain()
     {
         // Destroy all trees in the scene
@@ -70,23 +99,145 @@ public class TerrainGenerator : MonoBehaviour
         forestSettings.forestAllowedTilemap.ClearAllTiles();
     }
 
+    float SmoothstepBlending(float value, float min,  float max, float threshold)
+    {
+        if (value < min || value > max)
+        {
+            return value; // Clamp values outside the range to the target value
+        }
+        else if (value < min+threshold)
+        {
+            float t = Mathf.InverseLerp(min, min + threshold, value);
+            return Mathf.SmoothStep(value, min + threshold, t);
+        }
+        else if (value > max-threshold)
+        {
+            float t = Mathf.InverseLerp(max - threshold, max, value);
+            return Mathf.SmoothStep(value, max - threshold, t);
+        }
+        else
+        {
+            return min + ((max-min)/2);
+        }
+    }
+
+    public void GenerateTerrainMesh(GameObject meshGameObject)
+    {
+        // Create the mesh data
+        Mesh terrainMesh = new Mesh();
+        Vector3[] vertices = new Vector3[width * height];
+        int[] triangles = new int[(width - 1) * (height - 1) * 6];
+        Vector2[] uv = new Vector2[width * height];
+        int triangleIndex = 0;
+
+        // Loop over all tiles in the grid and generate mesh data for each tile
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                // Get the elevation value from the elevation texture map
+                Color color = elevationTextureMap.GetPixel(x, y);
+                float elevation = color.r * terrainHeight;
+
+                // Set the vertex position
+                vertices[x + y * width] = new Vector3(x, elevation, y);
+
+                // Set the UV coordinates
+                uv[x + y * width] = new Vector2((float)x / width, (float)y / height);
+
+                // Generate the triangles
+                if (x < width - 1 && y < height - 1)
+                {
+                    int topLeft = x + y * width;
+                    int topRight = (x + 1) + y * width;
+                    int bottomLeft = x + (y + 1) * width;
+                    int bottomRight = (x + 1) + (y + 1) * width;
+
+                    triangles[triangleIndex] = topLeft;
+                    triangles[triangleIndex + 1] = bottomLeft;
+                    triangles[triangleIndex + 2] = topRight;
+
+                    triangles[triangleIndex + 3] = topRight;
+                    triangles[triangleIndex + 4] = bottomLeft;
+                    triangles[triangleIndex + 5] = bottomRight;
+
+                    triangleIndex += 6;
+                }
+            }
+        }
+
+        // Assign the mesh data
+        terrainMesh.vertices = vertices;
+        terrainMesh.triangles = triangles;
+        terrainMesh.uv = uv;
+
+        // Calculate normals and tangents for proper shading
+        terrainMesh.RecalculateNormals();
+        terrainMesh.RecalculateTangents();
+
+        // Assign the mesh to the MeshFilter component on the provided GameObject
+        MeshFilter meshFilter = meshGameObject.GetComponent<MeshFilter>();
+        if (meshFilter != null)
+        {
+            meshFilter.sharedMesh = terrainMesh;
+
+            // Assign the material to the MeshRenderer component on the provided GameObject
+            MeshRenderer meshRenderer = meshGameObject.GetComponent<MeshRenderer>();
+            if (meshRenderer == null)
+            {
+                meshRenderer = meshGameObject.AddComponent<MeshRenderer>();
+            }
+            meshRenderer.sharedMaterial = terrainMaterial;
+        }
+    }
+
+
     // Helper function to generate terrain for a single tile
     private void GenerateTileTerrain(int x, int y)
     {
         // Add some randomness to the Perlin noise by using a random offset based on the seed
         float randomOffset = seed;
+        float elevation = 0;
+
 
         float sampleX = (float)x / width * scale + randomOffset;
         float sampleY = (float)y / height * scale + randomOffset;
 
-        float elevation = Mathf.PerlinNoise(sampleX, sampleY);
-        
+        elevation = Mathf.PerlinNoise(sampleX, sampleY);
+
+        if (detailsLevel > 1)
+        {
+
+            float factor = detailsLevel + 3;
+
+            float sampleX_details = (float)x / width * scale * factor/2 + randomOffset;
+            float sampleY_details = (float)y / height * scale * factor/2 + randomOffset;
+
+            float elevationDetails = Mathf.PerlinNoise(sampleX_details, sampleY_details);
+            elevationDetails = (elevationDetails * 2) - 1; // scaling to [-1,1]
+
+            elevation += elevationDetails / (factor+1);
+        }
+
+        float t = flatTerrainThreshold;
+        float min = flatTerrainMin;
+        float max = flatTerrainMax;
+
+        // Flattens Plains terrain
+        elevation = SmoothstepBlending(elevation, min, max, t);
+
+        Color color = new Color(elevation, elevation, elevation);
+        elevationTextureMap.SetPixel(x, y, color);
 
         Tile tile = null;
         foreach (var item in tilesWithThresholds)
         {
             if (elevation >= item.threshold)
                 tile = item.tile;
+            else if(elevation < 0)
+            {
+                tile = tilesWithThresholds[0].tile;
+            }
         }
 
         if (tile != null)
@@ -97,6 +248,8 @@ public class TerrainGenerator : MonoBehaviour
 
     private void GenerateTerrainType()
     {
+        elevationTextureMap = new Texture2D(width, height);
+
         // Loop over all tiles in the grid and generate terrain for each tile
         for (int x = 0; x < width; x++)
         {
@@ -105,10 +258,12 @@ public class TerrainGenerator : MonoBehaviour
                 GenerateTileTerrain(x, y);
             }
         }
+
+        elevationTextureMap.Apply();
     }
 
     // Main function to generate terrain for the entire grid
-    public void GenerateTerrain()
+    public void GenerateTerrainData()
     {
         // Clean the terrain before generating
         ClearTerrain();
@@ -233,6 +388,3 @@ public class TerrainGenerator : MonoBehaviour
     }
 
 }
-
-
-
