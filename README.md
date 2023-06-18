@@ -8,21 +8,24 @@ This system can be used as a foundation or starting point for games that require
 
 The system randomly generates terrain proprerties and save them in tilemaps (each tile will have a certain property)
 
+![Image](Readme%20Images/image0.png)
+![Image](Readme%20Images/image6.png)
+
 #### **🏔️Randomised and Customisable Generation for Rerrain Height-Tilemap**
 *Example:* green = plains, blue = deep water, grey = mountains... etc...
 
-![Iamge](Readme%20Images/image1.png)
+![Image](Readme%20Images/image1.png)
 
 #### **🌳Randomised and Customisable Generation of Forests-Areas-Tilemap**
-![Iamge](Readme%20Images/image2.png)
+![Image](Readme%20Images/image2.png)
 
 #### **🌳 Randomised and Customisable Generation/Spawning of Forest**
-![Iamge](Readme%20Images/image3.png)
+![Image](Readme%20Images/image3.png)
 
 #### **🔍 Different Details Levels**
-![Iamge](Readme%20Images/image4.png)
+![Image](Readme%20Images/image4.png)
 
 #### **🏔️ Terrain Mesh Generator**
-![Iamge](Readme%20Images/image5.png)
+![Image](Readme%20Images/image5.png)
 
 

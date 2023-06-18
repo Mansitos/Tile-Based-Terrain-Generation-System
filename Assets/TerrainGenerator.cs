@@ -81,6 +81,7 @@ public class TerrainGenerator : MonoBehaviour
     public ForestSettings forestSettings;
     public GameObject terrainMesh;
     public int terrainHeight;
+    public float mountainsHeightMultiplier;
     public Material terrainMaterial;
 
     public Texture2D elevationTextureMap;
@@ -99,25 +100,25 @@ public class TerrainGenerator : MonoBehaviour
         forestSettings.forestAllowedTilemap.ClearAllTiles();
     }
 
-    float SmoothstepBlending(float value, float min,  float max, float threshold)
+    float PlainsBlending(float value, float min,  float max)
     {
-        if (value < min || value > max)
+        if (value <= min)
         {
-            return value; // Clamp values outside the range to the target value
+            return value;
+
         }
-        else if (value < min+threshold)
+        else if (value >= max)
         {
-            float t = Mathf.InverseLerp(min, min + threshold, value);
-            return Mathf.SmoothStep(value, min + threshold, t);
+            return (value - ((max - min))) * mountainsHeightMultiplier;
+
         }
-        else if (value > max-threshold)
+        else if (value < max && value > min)
         {
-            float t = Mathf.InverseLerp(max - threshold, max, value);
-            return Mathf.SmoothStep(value, max - threshold, t);
+            return min;
         }
         else
         {
-            return min + ((max-min)/2);
+            return value;
         }
     }
 
@@ -219,16 +220,6 @@ public class TerrainGenerator : MonoBehaviour
             elevation += elevationDetails / (factor+1);
         }
 
-        float t = flatTerrainThreshold;
-        float min = flatTerrainMin;
-        float max = flatTerrainMax;
-
-        // Flattens Plains terrain
-        elevation = SmoothstepBlending(elevation, min, max, t);
-
-        Color color = new Color(elevation, elevation, elevation);
-        elevationTextureMap.SetPixel(x, y, color);
-
         Tile tile = null;
         foreach (var item in tilesWithThresholds)
         {
@@ -244,6 +235,16 @@ public class TerrainGenerator : MonoBehaviour
         {
             terrainTypeTilemap.SetTile(new Vector3Int(x, y, 0), tile);
         }
+
+        float t = flatTerrainThreshold;
+        float min = flatTerrainMin;
+        float max = flatTerrainMax;
+
+        // Flattens Plains terrain
+        elevation = PlainsBlending(elevation, min + t, max - t);
+
+        Color color = new Color(elevation, elevation, elevation);
+        elevationTextureMap.SetPixel(x, y, color);
     }
 
     private void GenerateTerrainType()
