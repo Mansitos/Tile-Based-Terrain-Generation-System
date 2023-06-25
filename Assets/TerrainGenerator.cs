@@ -1,8 +1,10 @@
+using Palmmedia.ReportGenerator.Core;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Tilemaps;
+using UnityEngine.UIElements;
 
 [System.Serializable]
 public struct TileWithThreshold
@@ -11,6 +13,8 @@ public struct TileWithThreshold
     public Tile tile;
     [Range(0f, 1f)]
     public float threshold;
+    public GameObject terrainMesh;
+    public Material material;
 }
 
 [System.Serializable]
@@ -41,18 +45,29 @@ public class TerrainGeneratorEditor : Editor
 
         if (GUILayout.Button("Generate Terrain Data"))
         {
-            // Generate new terrain
             Debug.Log("Generate Terrain Data");
             generator.GenerateTerrainData();
         }
 
-        if (GUILayout.Button("Generate Terrain Mesh"))
+        if (GUILayout.Button("Generate Forests"))
         {
-            // Generate new terrain
-            Debug.Log("Generate Terrain Mesh");
-            generator.GenerateTerrainMesh(generator.terrainMesh);
+            Debug.Log("Generate Forests");
+            generator.GenerateForests();
         }
 
+        if (GUILayout.Button("Wipe Forests"))
+        {
+            Debug.Log("Wipe Forests");
+            generator.WipeForests();
+        }
+
+        if (GUILayout.Button("Generate Terrain Mesh"))
+        {
+            Debug.Log("Generate Terrain Mesh");
+            generator.GenerateTerrainMesh(generator.terrainMesh, 1/generator.getInternalResolutionFactor());
+        }
+
+        // Update terrain heigthmap visualisation on inspector
         if (generator.elevationTextureMap!=null) { 
             EditorGUI.BeginDisabledGroup(true);
             EditorGUILayout.LabelField("Perlin Noise Map");
@@ -68,10 +83,18 @@ public class TerrainGeneratorEditor : Editor
 
 public class TerrainGenerator : MonoBehaviour
 {
-    public int width;
-    public int height;
+    public int width; // in meters
+    public int height; // in meters
+
+    private int widthInternal;  // in cells
+    private int heightInternal;  // in cells
+
     public float scale;
     public int detailsLevel; // TODO: Add range >0
+    [Range(1, 4)]
+    public int resolutionLevel = 1;
+    private float internalResolutionFactor;
+
     public Tilemap terrainTypeTilemap;
     public float flatTerrainMin;
     public float flatTerrainMax;
@@ -83,21 +106,23 @@ public class TerrainGenerator : MonoBehaviour
     public int terrainHeight;
     public float mountainsHeightMultiplier;
     public Material terrainMaterial;
-
     public Texture2D elevationTextureMap;
 
-     // Helper function to remove all tiles from the tilemap
-    private void ClearTerrain()
-    {
-        // Destroy all trees in the scene
-        foreach (Transform child in forestSettings.treesContainer.transform)
-        {
-            Destroy(child.gameObject);
-        }
+    public Material material1;
+    public Material material2;
+    public Material material3;
 
-        // Clear the terrain tilemaps
+    // Helper function to remove all tiles from the tilemap
+    private void ClearTerrainData()
+    {
+        WipeForests();
         terrainTypeTilemap.ClearAllTiles();
         forestSettings.forestAllowedTilemap.ClearAllTiles();
+    }
+
+    public float getInternalResolutionFactor()
+    {
+        return internalResolutionFactor;
     }
 
     float PlainsBlending(float value, float min,  float max)
@@ -122,37 +147,69 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
-    public void GenerateTerrainMesh(GameObject meshGameObject)
+
+    public void WipeForests()
+    {
+        // Destroy all trees in the scene
+        foreach (Transform child in forestSettings.treesContainer.transform)
+        {
+            Destroy(child.gameObject);
+        }
+    }
+
+
+
+    private Material CalculateMaterialBasedOnHeight(float height)
+    {
+        // Customize this method to assign different materials based on height thresholds
+        if (height > 0.3)
+        {
+            // Return Material 1
+            return material1;
+        }
+        else if (height > 0.6)
+        {
+            // Return Material 2
+            return material2;
+        }
+        else
+        {
+            // Return Material 3
+            return material3;
+        }
+    }
+
+    public void GenerateTerrainMesh(GameObject meshGameObject, float unitDistance)
     {
         // Create the mesh data
         Mesh terrainMesh = new Mesh();
-        Vector3[] vertices = new Vector3[width * height];
-        int[] triangles = new int[(width - 1) * (height - 1) * 6];
-        Vector2[] uv = new Vector2[width * height];
+        Vector3[] vertices = new Vector3[widthInternal * heightInternal];
+        int[] triangles = new int[(widthInternal - 1) * (heightInternal - 1) * 6];
+        Vector2[] uv = new Vector2[widthInternal * heightInternal];
         int triangleIndex = 0;
 
         // Loop over all tiles in the grid and generate mesh data for each tile
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x < widthInternal; x++)
         {
-            for (int y = 0; y < height; y++)
+            for (int y = 0; y < heightInternal; y++)
             {
                 // Get the elevation value from the elevation texture map
                 Color color = elevationTextureMap.GetPixel(x, y);
                 float elevation = color.r * terrainHeight;
 
-                // Set the vertex position
-                vertices[x + y * width] = new Vector3(x, elevation, y);
+                // Set the vertex position with the custom unit distance
+                vertices[x + y * widthInternal] = new Vector3(x * unitDistance, elevation, y * unitDistance);
 
                 // Set the UV coordinates
-                uv[x + y * width] = new Vector2((float)x / width, (float)y / height);
+                uv[x + y * widthInternal] = new Vector2((float)x / widthInternal, (float)y / heightInternal);
 
                 // Generate the triangles
-                if (x < width - 1 && y < height - 1)
+                if (x < widthInternal - 1 && y < heightInternal - 1)
                 {
-                    int topLeft = x + y * width;
-                    int topRight = (x + 1) + y * width;
-                    int bottomLeft = x + (y + 1) * width;
-                    int bottomRight = (x + 1) + (y + 1) * width;
+                    int topLeft = x + y * widthInternal;
+                    int topRight = (x + 1) + y * widthInternal;
+                    int bottomLeft = x + (y + 1) * widthInternal;
+                    int bottomRight = (x + 1) + (y + 1) * widthInternal;
 
                     triangles[triangleIndex] = topLeft;
                     triangles[triangleIndex + 1] = bottomLeft;
@@ -201,8 +258,8 @@ public class TerrainGenerator : MonoBehaviour
         float elevation = 0;
 
 
-        float sampleX = (float)x / width * scale + randomOffset;
-        float sampleY = (float)y / height * scale + randomOffset;
+        float sampleX = (float)x / widthInternal * scale + randomOffset;
+        float sampleY = (float)y / heightInternal * scale + randomOffset;
 
         elevation = Mathf.PerlinNoise(sampleX, sampleY);
 
@@ -211,8 +268,8 @@ public class TerrainGenerator : MonoBehaviour
 
             float factor = detailsLevel + 3;
 
-            float sampleX_details = (float)x / width * scale * factor/2 + randomOffset;
-            float sampleY_details = (float)y / height * scale * factor/2 + randomOffset;
+            float sampleX_details = (float)x / widthInternal * scale * factor/2 + randomOffset;
+            float sampleY_details = (float)y / heightInternal * scale * factor/2 + randomOffset;
 
             float elevationDetails = Mathf.PerlinNoise(sampleX_details, sampleY_details);
             elevationDetails = (elevationDetails * 2) - 1; // scaling to [-1,1]
@@ -249,12 +306,12 @@ public class TerrainGenerator : MonoBehaviour
 
     private void GenerateTerrainType()
     {
-        elevationTextureMap = new Texture2D(width, height);
+        elevationTextureMap = new Texture2D(widthInternal, heightInternal);
 
         // Loop over all tiles in the grid and generate terrain for each tile
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x < widthInternal; x++)
         {
-            for (int y = 0; y < height; y++)
+            for (int y = 0; y < heightInternal; y++)
             {
                 GenerateTileTerrain(x, y);
             }
@@ -263,28 +320,28 @@ public class TerrainGenerator : MonoBehaviour
         elevationTextureMap.Apply();
     }
 
-    // Main function to generate terrain for the entire grid
-    public void GenerateTerrainData()
+    private void InitialiseGeneratorVariables()
     {
-        // Clean the terrain before generating
-        ClearTerrain();
+        internalResolutionFactor = (float)(Mathf.Pow(2,resolutionLevel-1));
+        terrainTypeTilemap.transform.localScale = new Vector3(1 / internalResolutionFactor, 1 / internalResolutionFactor, 1 / internalResolutionFactor);
+        forestSettings.forestAllowedTilemap.transform.localScale = new Vector3(1 / internalResolutionFactor, 1 / internalResolutionFactor, 1 / internalResolutionFactor);
 
-        // Initialize the random number generator with the seed
-        Random.InitState(seed);
-
-        GenerateTerrainType();
-
-        GenerateForests();
-
+        heightInternal = height * (int)internalResolutionFactor;
+        widthInternal = width * (int)internalResolutionFactor;
     }
 
-    private void GenerateForests()
+    public void GenerateTerrainData()
+    {
+        InitialiseGeneratorVariables();
+        ClearTerrainData();
+        Random.InitState(seed); // Initialize the random number generator with the seed
+        GenerateTerrainType();
+    }
+
+    public void GenerateForests()
     {
         GenerateAllowedForestArea();
-
         GenerateTrees();
-
-
     }
 
     private void GenerateAllowedForestArea()
@@ -296,8 +353,8 @@ public class TerrainGenerator : MonoBehaviour
 
             float randomOffset = seed*2;
 
-            float sampleX = (float)pos.x / width * forestSettings.forestsSize + randomOffset;
-            float sampleY = (float)pos.y / height * forestSettings.forestsSize + randomOffset;
+            float sampleX = (float)pos.x / widthInternal * forestSettings.forestsSize + randomOffset;
+            float sampleY = (float)pos.y / heightInternal * forestSettings.forestsSize + randomOffset;
 
             float noiseValue = Mathf.PerlinNoise(sampleX, sampleY);
 
@@ -325,13 +382,15 @@ public class TerrainGenerator : MonoBehaviour
 
         // Generate Perlin noise to determine where trees should be placed
         float randomOffset = seed * 3;
+        int internalResFactor = (int)internalResolutionFactor;
+        
 
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x < widthInternal; x+= internalResFactor)
         {
-            for (int y = 0; y < height; y++)
+            for (int y = 0; y < heightInternal; y+= internalResFactor)
             {
-                float sampleX = (float)x / width * forestSettings.treesSpreadValue + randomOffset;
-                float sampleY = (float)y / height * forestSettings.treesSpreadValue + randomOffset;
+                float sampleX = (float)x / widthInternal * forestSettings.treesSpreadValue + randomOffset;
+                float sampleY = (float)y / heightInternal * forestSettings.treesSpreadValue + randomOffset;
 
                 float noiseValue = Mathf.PerlinNoise(sampleX, sampleY);
 
@@ -363,7 +422,7 @@ public class TerrainGenerator : MonoBehaviour
         List<Vector3> positions = new List<Vector3>();
 
         // Get the bounds of the cell in world space
-        BoundsInt cellBounds = new BoundsInt(cellPos, new Vector3Int(1, 1, 1));
+        BoundsInt cellBounds = new BoundsInt(cellPos, new Vector3Int(1* (int)internalResolutionFactor, 1 * (int)internalResolutionFactor, 1* (int)internalResolutionFactor));
 
         // Generate the specified number of random positions inside the cell bounds
         for (int i = 0; i < numPositions; i++)
@@ -377,10 +436,7 @@ public class TerrainGenerator : MonoBehaviour
                 Mathf.Round(Random.Range(cellBounds.min.y * c, cellBounds.max.y * c)) / c
             );
 
-            if (i == 0)
-            {
-                Debug.Log(randomPos.ToString());
-            }
+            randomPos = new Vector3(randomPos.x / internalResolutionFactor, 0, randomPos.z / internalResolutionFactor);
 
             positions.Add(randomPos);
         }
