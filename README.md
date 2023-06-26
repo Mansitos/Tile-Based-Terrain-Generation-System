@@ -10,6 +10,7 @@ The system randomly generates terrain proprerties and save them in tilemaps (eac
 
 ![Image](Readme%20Images/image0.png)
 ![Image](Readme%20Images/image6.png)
+![Image](Readme%20Images/image7.png)
 
 #### **🏔️Randomised and Customisable Generation for Rerrain Height-Tilemap**
 *Example:* green = plains, blue = deep water, grey = mountains... etc...
